@@ -1,0 +1,5 @@
+release: |
+  chmod -R 775 storage bootstrap/cache
+  chmod -R a+w storage bootstrap/cache
+  php artisan config:cache
+  php artisan route:cache
