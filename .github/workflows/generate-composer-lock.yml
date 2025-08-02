@@ -1,17 +1,24 @@
-name: Generate and Commit composer.lock
+name: Generate and Commit composer.json + composer.lock
 
 on:
   workflow_dispatch:
 
 jobs:
-  generate-composer-lock:
+  sync-composer:
+    name: Sync composer.json & composer.lock
     runs-on: ubuntu-latest
 
     steps:
       - name: ⬇️ Checkout repository
         uses: actions/checkout@v3
+
+      - name: ⏳ Cache Composer dependencies
+        uses: actions/cache@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
 
       - name: 🔧 Set up PHP with required extensions
         uses: shivammathur/setup-php@v2
@@ -23,25 +30,30 @@ jobs:
       - name: 📝 Prepare .env and fake database
         run: |
           cp .env.example .env
+          # as provided
           echo "APP_ENV=production" >> .env
           echo "APP_KEY=base64:$(head -c 32 /dev/urandom | base64)" >> .env
           echo "DB_CONNECTION=sqlite" >> .env
           echo "DB_DATABASE=:memory:" >> .env
 
-      - name: 💾 Install Composer dependencies (generates composer.lock)
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+      - name: 💡 Install or update Composer dependencies
+        run: composer update --no-interaction --no-scripts --optimize-autoloader
 
-      - name: 🧹 Clean up cache (optional)
-        run: php artisan config:clear || true
+      - name: 🧹 Clear Laravel caches (optional)
+        run: |
+          php artisan config:clear || true
+          php artisan view:clear   || true
+          php artisan route:clear  || true
 
-      - name: 📤 Commit and push composer.lock if created or changed
+      - name: 📤 Commit and push composer.json & composer.lock
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add composer.lock
+          git config user.email "41898282+github‑actions[bot]@users.noreply.github.com"
+          git add composer.json composer.lock
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "✅ No changes to commit."
           else
-            git commit -m "chore: generate composer.lock via GitHub Actions"
+            git commit -m "chore: sync composer.json & composer.lock from GitHub Actions"
             git push
+            echo "✅ Pushed updates"
           fi
