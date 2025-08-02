@@ -1,4 +1,4 @@
-name: Generate composer.lock
+name: Generate and Commit composer.lock
 
 on:
   workflow_dispatch:
@@ -13,30 +13,35 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🔧 Set up PHP
+      - name: 🔧 Set up PHP with required extensions
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: mbstring, bcmath, xml, ctype, curl, json, tokenizer, openssl, pdo, zip
+          extensions: mbstring, bcmath, xml, ctype, curl, json, tokenizer, openssl, pdo_sqlite, sqlite
           coverage: none
 
-      - name: 💾 Install Composer (dependencies only)
+      - name: 📝 Prepare .env and fake database
         run: |
-          if [ -f "composer.lock" ]; then
-            echo "composer.lock already exists. Skipping install."
-          else
-            echo "composer.lock not found. Installing dependencies..."
-            composer install --no-interaction --prefer-dist
-          fi
+          cp .env.example .env
+          echo "APP_ENV=production" >> .env
+          echo "APP_KEY=base64:$(head -c 32 /dev/urandom | base64)" >> .env
+          echo "DB_CONNECTION=sqlite" >> .env
+          echo "DB_DATABASE=:memory:" >> .env
 
-      - name: 📤 Commit composer.lock if created
+      - name: 💾 Install Composer dependencies (generates composer.lock)
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: 🧹 Clean up cache (optional)
+        run: php artisan config:clear || true
+
+      - name: 📤 Commit and push composer.lock if created or changed
         run: |
-          if git diff --quiet -- composer.lock; then
-            echo "No changes in composer.lock"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add composer.lock
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add composer.lock
             git commit -m "chore: generate composer.lock via GitHub Actions"
             git push
           fi
